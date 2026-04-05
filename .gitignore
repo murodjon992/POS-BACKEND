@@ -1,0 +1,15 @@
+# Python kesh fayllari
+__pycache__/
+*.py[cod]
+
+# Muhit va sozlamalar
+.env
+.idea/
+env/
+venv/
+
+# Ma'lumotlar bazasi
+db.sqlite3
+
+# Static va Media (Agar serverda o'zi yig'ilsa)
+# static/  <-- Buni o'chirmang, agar fontlaringiz shu yerda bo'lsa!
