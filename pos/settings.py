@@ -11,17 +11,12 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-t#=w&p#low5j^56vsf=kne_r_1^rv2&wxh$auzt*+n3h=1c&&s'
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG") == "True"
 
-ALLOWED_HOSTS = [
-    "*",
-    "192.168.100.118",
-    "127.0.0.1",
-    "localhost"
-]
+ALLOWED_HOSTS = ["barakapos.uz", "www.barakapos.uz", "127.0.0.1", "localhost", "backend"]
 
 
 # Application definition
@@ -61,12 +56,16 @@ REST_FRAMEWORK = {
 
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
+    "https://barakapos.uz",
+    "https://www.barakapos.uz",
     "http://127.0.0.1:5173",
     "http://192.168.100.118:8000",
 ]
-CORS_ALLOW_ALL_ORIGINS  =True
+
+CSRF_TRUSTED_ORIGINS = ["https://barakapos.uz", "https://www.barakapos.uz"]
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+CORS_ALLOW_ALL_ORIGINS  = True
 CORS_EXPOSE_HEADERS = ['Content-Disposition']
 CORS_ALLOW_METHODS = [
     "DELETE",
@@ -101,8 +100,12 @@ WSGI_APPLICATION = 'pos.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv("DB_NAME"),
+        'USER': os.getenv("DB_USER"),
+        'PASSWORD': os.getenv("DB_PASSWORD"),
+        'HOST': os.getenv("DB_HOST"),
+        'PORT': os.getenv("DB_PORT", "5432"),
     }
 }
 
@@ -142,3 +145,4 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
