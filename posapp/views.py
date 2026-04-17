@@ -4,7 +4,7 @@ from django.db.models import Sum,F,Count,DecimalField,ExpressionWrapper
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view,permission_classes,authentication_classes
 from urllib3.filepost import writer
-
+from rest_framework.pagination import PageNumberPagination
 from .permissions import HasActiveSubscription
 from django.db import transaction
 from decimal import Decimal
@@ -665,26 +665,48 @@ def generate_product_barcodes_pdf(request):
         print(f"GLOBAL XATO: {global_e}")
         return HttpResponse(f"Serverda xato: {str(global_e)}", status=500)
 
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def product_list_create(request):
     if request.method == 'GET':
-        # Agar superadmin bo'lsa hamma mahsulot, bo'lmasa faqat o'ziniki
-        if request.user.is_superuser:
-            products = Product.objects.all().order_by('-id')
-        else:
-            products = Product.objects.filter(owner=request.user).order_by('-id')
+        # 1. Querysetni olish (select_related tezlik uchun)
+        products = Product.objects.select_related('category', 'owner').all().order_by('-id')
+
+        # User filtratsiyasi
+        if not request.user.is_superuser:
+            products = products.filter(owner=request.user)
+
+        # Qidiruv
+        search = request.query_params.get('search', None)
+        if search:
+            products = products.filter(name__icontains=search) | products.filter(barcode__icontains=search)
+
+        # 2. PAGINATIONNI QAT'IY ISHLATISH
+        paginator = PageNumberPagination()
+        paginator.page_size = 20  # settings.py ga ishonmasdan, shu yerda belgilaymiz
+        
+        # 3. Querysetni qirqish
+        page = paginator.paginate_queryset(products, request)
+        
+        if page is not None:
+            serializer = ProductSerializer(page, many=True)
+            # Bu joyda count, next, previous va results avtomatik generatsiya bo'ladi
+            return paginator.get_paginated_response(serializer.data)
+
+        # Agar biron sababga ko'ra pagination ishlamasa (masalan, page=999 bo'lsa)
         serializer = ProductSerializer(products, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
         serializer = ProductSerializer(data=request.data)
         if serializer.is_valid():
-            # Mahsulot egasini avtomatik hozirgi userga biriktiramiz
             serializer.save(owner=request.user)
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
+
+        
 @api_view(['GET','PUT','DELETE'])
 @permission_classes([IsAuthenticated])
 def product_detail(request, pk):
