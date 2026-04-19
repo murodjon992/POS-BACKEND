@@ -271,42 +271,66 @@ def product_search(request):
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20  # Har safar 20 tadan ma'lumot chiqadi
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def inventory_view(request):
-    if request.user.is_superuser:
-        inventory = AccessoryInventory.objects.select_related(
-            "product",
-            "product__category"
-        ).all()
+    inventory = AccessoryInventory.objects.select_related("product", "product__category").order_by('-updated_at')
+
+    if not request.user.is_superuser:
+        inventory = inventory.filter(product__owner=request.user)
 
         # 2. Agar oddiy do'kon egasi bo'lsa - faqat o'zinikini olamiz
-    else:
-        inventory = AccessoryInventory.objects.filter(
-            product__owner=request.user
-        ).select_related(
-            "product",
-            "product__category"
-        ).all()
-
-    # 1. Nechta mahsulot tugadi va nechta kam qoldi - umumiy hisoblaymiz
     out_of_stock_count = inventory.filter(Q(quantity=0) | Q(quantity__isnull=True)).count()
     low_stock_count = inventory.filter(quantity__gt=0, quantity__lte=10).count()
 
+    search_query = request.query_params.get("search", "")
+    if search_query:
+        inventory = inventory.filter(
+            Q(product__name__icontains=search_query) | 
+            Q(product__barcode__icontains=search_query)
+        )
+
+    # B) Kategoriya bo'yicha filtr
+    category_id = request.query_params.get("category")
+    if category_id:
+        inventory = inventory.filter(product__category_id=category_id)
+
+    # Status bo'yicha filtr (QuerySet hali ishga tushmadi, bu tekin)
     status = request.query_params.get("status")
     if status == "out":
-        inventory = inventory.filter(Q(quantity=0) | Q(quantity__isnull=0))
+        inventory = inventory.filter(Q(quantity=0) | Q(quantity__isnull=True)) # Xatoni to'g'irladim: isnull=True bo'ladi
     elif status == "low":
-        inventory = inventory.filter(quantity__gt=0,quantity__lte=10)
+        inventory = inventory.filter(quantity__gt=0, quantity__lte=10)
 
+    category_id = request.query_params.get("category")
+    if category_id:
+        inventory = inventory.filter(product__category_id=category_id)
+
+    # 2. PAGINATION QO'SHAMIZ (Eng muhim joyi!)
+    paginator = StandardResultsSetPagination()
+    page = paginator.paginate_queryset(inventory, request)
+    
+    if page is not None:
+        serializer = InventorySerializer(page, many=True)
+        return paginator.get_paginated_response({
+            "alerts": {
+                "out_of_stock": out_of_stock_count,
+                "low_stock": low_stock_count,
+                "has_warning": out_of_stock_count > 0 or low_stock_count > 0
+            },
+            "results": serializer.data
+        })
+
+    # Agar pagination bo'lmasa (kam ma'lumot bo'lsa)
     serializer = InventorySerializer(inventory, many=True)
-    # 3. Response ichida qo'shimcha "alerts" ma'lumotlarini qaytaramiz
     return Response({
-        "alerts": {
-            "out_of_stock": out_of_stock_count,
-            "low_stock": low_stock_count,
-            "has_warning": out_of_stock_count > 0 or low_stock_count > 0
-        },
+        "alerts": {"out_of_stock": out_of_stock_count, "low_stock": low_stock_count},
         "results": serializer.data
     })
 
