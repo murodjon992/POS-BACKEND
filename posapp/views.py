@@ -612,76 +612,100 @@ def generate_product_barcodes_pdf(request):
     try:
         # 1. Ma'lumotlarni olish
         product_ids = request.data.get('product_ids', [])
+        options = request.data.get('options', {})
+        
+        show_name = options.get('includeName', True)
+        show_price = options.get('includePrice', True)
+        show_barcode_text = options.get('includeBarcodeText', True)
 
-        # 2. Filtrlash (Xatolik shu yerda edi)
         if product_ids:
             products = Product.objects.filter(id__in=product_ids).select_related('category')
         else:
-            # Agar IDlar kelmasa, hamma mahsulotni olish (ixtiyoriy)
             products = Product.objects.all()[:20]
 
         if not products.exists():
             return HttpResponse("Mahsulotlar topilmadi", status=404)
 
-        # 3. PDF tayyorlash
+        # 2. PDF sozlamalari
         buffer = io.BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
         width, height = A4
-
-        x_start = 35
-        y_offset = height - 100
+        
+        x_start = 30
+        margin_top = 30
+        margin_bottom = 30
+        
+        # JORIY QATORNING TEPASI
+        current_y = height - margin_top 
+        
         columns = 4
         item_width = 140
-        item_height = 135
-        x_offset = x_start
-
+        item_height = 110 # Har bir blok balandligi
+        
         for index, product in enumerate(products):
-            # Barcode yaratish
+            col_index = index % columns
+            
+            # Yangi qator boshlanishida pastga tushish va sahifa tekshiruvi
+            if col_index == 0 and index > 0:
+                current_y -= item_height
+                
+                # Agar keyingi qator sahifaga sig'masa - Yangi sahifa
+                if current_y < margin_bottom + 100:
+                    p.showPage()
+                    current_y = height - margin_top
+            
+            # X koordinatasini hisoblash
+            x_offset = x_start + (col_index * item_width)
+
             try:
+                # 3. Barcode yaratish
                 CODE128 = barcode.get_barcode_class('code128')
                 bc_value = str(product.barcode) if product.barcode else "000000"
+                
                 writer = ImageWriter()
-                # Barcode hajmini biroz kichraytiramiz xatolik bermasligi uchun
-                writer.set_options({"module_height": 5.0, "text_distance": 1.5, "font_size": 10})
-
+                # 'write_text' deb yozilishi shart
+                options_bc = {
+                    "module_height": 5.0, 
+                    "text_distance": 3.5, 
+                    "font_size": 8 if show_barcode_text else 0, 
+                    "write_text": show_barcode_text,
+                    "font_path" : FONT_REG
+                }
+                
                 ean = CODE128(bc_value, writer=writer)
                 bc_buffer = io.BytesIO()
-                ean.write(bc_buffer)
+                ean.write(bc_buffer, options=options_bc)
                 bc_buffer.seek(0)
                 img = PILImage.open(bc_buffer)
 
-                # Chizish
-                category_name = f"({product.category.name})" if product.category else ""
-                full_name = f"{product.name} {category_name}"
+                # --- CHIZISH (current_y dan pastga qarab) ---
+                
+                # 1. Mahsulot nomi
+                if show_name:
+                    category_name = f"({product.category.name})" if product.category else ""
+                    full_name = f"{product.name} {category_name}"
+                    p.setFont("Montserrat-Bold", 9)
+                    # Nomni qirqib olish (yoniga o'tib ketmasligi uchun)
+                    p.drawString(x_offset, current_y - 15, full_name[:25])
 
-                p.setFont("Montserrat-Bold", 9)
-                p.drawString(x_offset, y_offset + 75, full_name[:25])
-                p.drawInlineImage(img, x_offset, y_offset+5, width=120, height=55)
+                # 2. Barcode rasmi (Nomi bo'lsa ham bo'lmasa ham joyi aniq)
+                p.drawInlineImage(img, x_offset, current_y - 70, width=120, height=50)
 
-                p.setFont("Montserrat-Bold", 10)
-                p.drawString(x_offset+4, y_offset, f"Narxi: {round(product.sale_price)} so'm")
+                # 3. Narxi
+                if show_price:
+                    p.setFont("Montserrat-Bold", 10)
+                    price_text = f"Narxi: {round(product.sale_price):,} so'm".replace(',', ' ')
+                    p.drawString(x_offset + 5, current_y - 75, price_text)
 
-                x_offset += item_width
-
-                if (index + 1) % columns == 0:
-                    x_offset = x_start
-                    y_offset -= item_height
-
-                if y_offset < 100:
-                    p.showPage()
-                    y_offset = height - 80
             except Exception as e:
                 print(f"Shtrix kod chizishda xato ({product.name}): {e}")
                 continue
 
         p.save()
-
-        # 4. Response qaytarish
         pdf = buffer.getvalue()
         buffer.close()
-
+        
         response = HttpResponse(pdf, content_type='application/pdf')
-        # CORS uchun ruxsatlar
         response['Access-Control-Allow-Origin'] = '*'
         return response
 
@@ -705,6 +729,10 @@ def product_list_create(request):
         search = request.query_params.get('search', None)
         if search:
             products = products.filter(name__icontains=search) | products.filter(barcode__icontains=search)
+
+        category_id = request.query_params.get('category', None)
+        if category_id:
+            products = products.filter(category_id=category_id)
 
         # 2. PAGINATIONNI QAT'IY ISHLATISH
         paginator = PageNumberPagination()
