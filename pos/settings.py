@@ -22,7 +22,8 @@ ALLOWED_HOSTS = ["127.0.0.1", '*', "barakapos.uz", "localhost", "backend"]
 # Application definition
 
 INSTALLED_APPS = [
-    'jazzmin',
+    'daphne',
+    'channels',
     'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -32,8 +33,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'django_celery_beat',
     'posapp',
-    'telegram_bot'
+    'telegram_bot',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -49,13 +52,21 @@ MIDDLEWARE = [
 
 
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
 }
-
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Sklad va Savdo API',
+    'DESCRIPTION': 'Sotuvchilar va Ownerlar uchun savdo tizimi API hujjatlari',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # Agar JWT ishlatsangiz, buni qo'shish kerak (authorize tugmasi chiqishi uchun)
+    'COMPONENT_SPLIT_PATCH': True,
+}
 
 CORS_ALLOWED_ORIGINS = [
     "https://barakapos.uz",
@@ -130,6 +141,14 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("redis", 6379)],
+        },
+    },
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -148,3 +167,8 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+CELERY_BROKER_URL = 'redis://redis:6379/0'
+CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Tashkent'

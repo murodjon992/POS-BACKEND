@@ -78,36 +78,50 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     target_user_id = context.user_data.get('attempt_user_id')
+    print(f"xato telegram raqam: {telegram_phone}")
+    print(f"xato telegram user_id: {target_user_id}")
+
+
 
     if not target_user_id:
         await update.message.reply_text("❌ Xatolik: Jarayon boshidan boshlanmadi. Ilovadan qayta kiring.")
         return
 
-    # Bazadan User ID orqali Subscriptionni qidiramiz
-    sub = await sync_to_async(
-        lambda: Subscription.objects.select_related('user').filter(user_id=target_user_id).first()
-    )()
+    try:
+        # 1. ID ni songa o'giramiz
+        u_id = int(target_user_id)
+        
+        # 2. Bazadan qidiramiz
+        sub = await sync_to_async(
+            lambda: Subscription.objects.select_related('user').filter(user_id=u_id).first()
+        )()
 
-    if sub:
-        # XAVFSIZLIK SHARTI: Ilovadagi raqam Telegram raqami bilan bir xilmi?
-        if sub.phone == telegram_phone:
-            sub.telegram_chat_id = chat_id
-            await sync_to_async(sub.save)()
+        if sub:
+            print(f"DEBUG: Bazadagi raqam: {sub.phone}")
+            
+            # 3. Raqamlarni solishtirish (oxirgi 9 ta raqam bo'yicha - eng xavfsizi)
+            if sub.phone.endswith(telegram_phone[-9:]):
+                sub.telegram_chat_id = chat_id
+                await sync_to_async(sub.save)()
 
-            await update.message.reply_text(
-                f"✅ Tasdiqlandi! {sub.user.username}, raqamlar mos keldi.\n"
-                "Endi ilovaga qaytib 'Kodni yuborish' tugmasini bosishingiz mumkin."
-            )
-            context.user_data.clear()
+                await update.message.reply_text(
+                    f"✅ Tabriklaymiz {sub.user.username}!\n"
+                    "Telegram hisobingiz muvaffaqiyatli bog'landi. "
+                    "Endi har kuni kechqurun savdo hisobotlarini shu yerga yuboraman."
+                )
+                context.user_data.clear()
+            else:
+                await update.message.reply_text(
+                    f"❌ Raqamlar mos kelmadi!\n"
+                    f"Ilovadagi raqam: {sub.phone}\n"
+                    f"Telegram raqamingiz: {telegram_phone}"
+                )
         else:
-            await update.message.reply_text(
-                f"❌ Raqamlar mos emas!\n"
-                f"Ilovadagi raqam: +{sub.phone}\n"
-                f"Siz yuborgan raqam: +{telegram_phone}\n\n"
-                "Faqat o'z raqamingizga tegishli Telegramdan foydalaning."
-            )
-    else:
-        await update.message.reply_text("❌ Foydalanuvchi topilmadi.")
+            await update.message.reply_text(f"❌ Bazadan ID={u_id} bo'lgan foydalanuvchi topilmadi.")
+
+    except Exception as e:
+        print(f"Xatolik yuz berdi: {e}")
+        await update.message.reply_text("⚠️ Tizimda xatolik yuz berdi.")
 
 
 # 3. DJANGO COMMAND KLASSI (Xato shu yerda edi)
