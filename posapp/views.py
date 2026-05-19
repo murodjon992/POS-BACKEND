@@ -133,34 +133,37 @@ def register(request):
 def login(request):
     username = request.data.get("username")
     password = request.data.get("password")
-
-    # 1. Avvalo username bazada borligini tekshiramiz
     try:
-        user_obj = User.objects.get(username=username)
-    except User.DoesNotExist:
-        return Response({"error": "Bunday foydalanuvchi nomi mavjud emas"}, status=404)
 
-    # 2. Endi parolni tekshiramiz
-    user = authenticate(username=username, password=password)
+        # 1. Avvalo username bazada borligini tekshiramiz
+        try:
+            user_obj = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({"error": "Bunday foydalanuvchi nomi mavjud emas"}, status=404)
 
-    if user is None:
-        # Agar username bor bo'lsa-yu, authenticate None qaytarsa - demak parol xato
-        return Response({"error": "Parol noto'g'ri kiritildi"}, status=400)
+        # 2. Endi parolni tekshiramiz
+        user = authenticate(username=username, password=password)
 
-    # 3. Muvaffaqiyatli login
-    token, _ = Token.objects.get_or_create(user=user)
-    status,role = get_user_info(user)
+        if user is None:
+            # Agar username bor bo'lsa-yu, authenticate None qaytarsa - demak parol xato
+            return Response({"error": "Parol noto'g'ri kiritildi"}, status=400)
 
-    return Response({
-        "token": token.key,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "is_superuser": user.is_superuser,
-            "role":role,
-            "status":status
-        }
-    })
+        # 3. Muvaffaqiyatli login
+        token, _ = Token.objects.get_or_create(user=user)
+        status,role = get_user_info(user)
+
+        return Response({
+            "token": token.key,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "is_superuser": user.is_superuser,
+                "role":role,
+                "status":status
+            }
+        })
+    except Exception as e:
+        return Response({"error": f"Tizim xatosi: {str(e)}"}, status=500)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -259,15 +262,10 @@ temp_otp_store = {}
 @permission_classes([HasActiveSubscription])
 def get_product_by_barcode(request, barcode):
     try:
-        product = Product.objects.get(barcode=barcode,owner=request.user)
-
-        data = {
-            "id": product.id,
-            "name": product.name,
-            "price": product.sale_price,
-        }
-
-        return Response(data)
+        actual_owner = get_actual_owner(request.user)
+        product = Product.objects.get(barcode=barcode,owner=actual_owner)
+        serializer = ProductSerializer(product)
+        return Response(serializer.data)
 
     except Product.DoesNotExist:
         return Response({"error": "Product not found"})
@@ -335,11 +333,12 @@ def sell_product(request):
 @permission_classes([IsAuthenticated])
 def product_search(request):
     query = request.GET.get("q", "").strip()
+    actual_owner = get_actual_owner(request.user)
 
     products = Product.objects.filter(
         Q(name__icontains=query) |
         Q(barcode__icontains=query),
-        owner=request.user
+        owner=actual_owner
     ).order_by('name')[:20]
     # Agar topilmasa, error emas, bo'sh list [] qaytaramiz
     serializer = ProductSerializer(products, many=True)
@@ -918,7 +917,7 @@ def pay_debtor_debt(request, customer_id):
 @api_view(['GET'])
 @permission_classes([IsAdminUser]) # Faqat Superadmin ko'ra oladi
 def get_all_users(request):
-    users = User.objects.all().order_by('-date_joined')
+    users = User.objects.filter(is_superuser=False, seller_profile__isnull=True).order_by('-date_joined')
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
 
@@ -947,7 +946,7 @@ def super_admin_excel_upload(request):
     try:
         target_owner = User.objects.get(id=target_owner_id)
         df = pd.read_excel(file)
-        required_columns = ['barcode', 'name', 'purchase_price', 'sale_price']
+        required_columns = ['barcode', 'name', 'purchase_price', 'sale_price', 'category']
         for col in required_columns:
             if col not in df.columns:
                 return Response({"error": f"Excelda '{col}' ustuni topilmadi!"}, status=400)
@@ -979,6 +978,64 @@ def super_admin_excel_upload(request):
         return Response({"message": f"{len(df)} ta mahsulot muvaffaqiyatli yuklandi!"}, status=201)
     except User.DoesNotExist:
         return Response({"error": "Bunday foydalanuvchi topilmadi!"}, status=404)
+    except Exception as e:
+        return Response({"error": f"Xatolik: {str(e)}"}, status=500)
+    
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic # Butun jarayon xavfsiz bo'lishi uchun
+def owner_excel_upload(request):
+    file = request.FILES.get('file')
+    target_owner = request.user 
+    if not file:
+        return Response({"error": "Fayl topilmadi!"}, status=400)
+    try:
+        # Excelni o'qish
+        df = pd.read_excel(file)
+        
+        # 1. Ustunlar mavjudligini tekshirish (Kategoriyani ham qo'shdik)
+        required_columns = ['barcode', 'name', 'purchase_price', 'sale_price', 'category']
+        for col in required_columns:
+            if col not in df.columns:
+                return Response({"error": f"Excelda '{col}' ustuni topilmadi!"}, status=400)
+
+        count = 0
+        for index, row in df.iterrows():
+            # Ma'lumotlarni tozalash
+            barcode = str(row['barcode']).strip()
+            p_name = str(row['name']).strip()
+            c_name = str(row.get('category', '')).strip() # Kategoriya nomi
+
+            # 2. Kategoriyani topish yoki yaratish
+            category_obj = None
+            if c_name and c_name.lower() != 'nan': # Exceldagi bo'sh katak 'nan' bo'lib kelishi mumkin
+                category_obj, _ = Category.objects.get_or_create(
+                    name=c_name,
+                    owner=target_owner
+                )
+
+            # 3. Mahsulotni yaratish yoki yangilash
+            product, _ = Product.objects.update_or_create(
+                owner=target_owner,
+                barcode=barcode,
+                defaults={
+                    'name': p_name,
+                    'category': category_obj, # Mana shu yerda bog'lanadi
+                    'purchase_price': float(row.get('purchase_price', 0)),
+                    'sale_price': float(row.get('sale_price', 0)),
+                }
+            )
+
+            # 4. Inventarizatsiya
+            inventory, _ = AccessoryInventory.objects.get_or_create(product=product)
+            qty = row.get('quantity', 0)
+            inventory.quantity = int(qty) if pd.notnull(qty) else 0
+            inventory.save()
+            count += 1
+
+        return Response({"message": f"{count} ta mahsulot muvaffaqiyatli yuklandi!"}, status=201)
+
     except Exception as e:
         return Response({"error": f"Xatolik: {str(e)}"}, status=500)
 
@@ -1155,14 +1212,7 @@ class StandardResultsSetPagination(PageNumberPagination):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_my_sellers(request):
-    # Faqat ushbu Owner (egasi) yaratgan sotuvchilarni olamiz
-    # Bu yerda mantiq sizning User modelizga bog'liq. 
-    # Agar sotuvchilarni 'owner' degan field orqali bog'lagan bo'lsangiz:
     sellers = User.objects.filter(seller_profile__owner=request.user)
-    
-    # Agar oddiyroq bo'lsa (masalan, hamma staff bo'lmagan userlar):
-    # sellers = User.objects.filter(is_staff=False)
-
     data = [{"id": s.id, "username": s.username} for s in sellers]
     return Response(data)
 
@@ -1219,51 +1269,6 @@ def return_product(request):
         return Response({"status": "error", "message": str(e)}, status=400)
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def daily_summary(request):
-    today = timezone.now().date()
-    owner = request.user
-    cash_flow = Transaction.objects.filter(owner=owner, created_at__date=today)
-    
-    cash_in = cash_flow.filter(type__in=['sale', 'customer_pay']).aggregate(Sum('amount'))['amount__sum'] or 0
-    cash_out = cash_flow.filter(type__in=['supplier_pay', 'expense']).aggregate(Sum('amount'))['amount__sum'] or 0
-    final_cash_today = cash_in - cash_out
-
-    # 2. Savdo ko'rsatkichlari (StocLog modelidan)
-    sales_qs = StocLog.objects.filter(product__owner=owner, created_at__date=today)
-    
-    # Jami aylanma (Sotuv summasi)
-    total_sales_amount = sum(s.quantity * s.price_at_time for s in sales_qs)
-    
-    # FOYDA HISOBI (Sotilgan narx - Tan narxi)
-    total_profit = sum(
-        (s.price_at_time - (s.purchase_price_at_time or 0)) * s.quantity 
-        for s in sales_qs
-    )
-
-    # 3. Nasiyalar
-    new_debts = sales_qs.filter(payment_method='debt').aggregate(
-        total=Sum(F('quantity') * F('price_at_time')))['total'] or 0
-
-    return Response({
-        "date": today,
-        "kassa": {
-            "kirim": cash_in,
-            "chiqim": cash_out,
-            "balans": final_cash_today
-        },
-        "savdo": {
-            "jami_aylanma": total_sales_amount,
-            "sof_foyda": total_profit, # Mana shu eng muhim ko'rsatkich
-            "yangi_nasiyalar": new_debts
-        },
-        "miqdor": {
-            "sotilgan_tovar_soni": sales_qs.aggregate(Sum('quantity'))['quantity__sum'] or 0,
-            "turli_mahsulotlar": sales_qs.values('product').distinct().count()
-        }
-    })
-   
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -1286,14 +1291,9 @@ def select_plan(request):
 @permission_classes([IsAuthenticated])
 def extend_subscription(request):
     sub = Subscription.objects.get(user=request.user)
-    
-    # Uzaytirish mantiqi: Sanaga +30 kun qo'shish
-    # Lekin hali to'lov tasdiqlanmagani uchun is_paid = False
-    new_date = max(sub.trial_end, timezone.now()) + timedelta(days=30)
-    sub.trial_end = new_date
-    sub.is_paid = False 
+    sub.is_paid = False
     sub.save()
-    return Response({"status": "ok"})
+    return Response({"status": "Arizangiz qabul qilindi, tasdiqlashni kuting."})
    
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated,HasActiveSubscription])
@@ -1405,7 +1405,7 @@ def my_subscription(request):
         defaults={
             'trial_end': timezone.now() + timedelta(days=14), # Trial muddati
             'is_paid': False,
-            'phone':'Nomalum'
+            'phone': 'Nomalum'
         }
     )
     data = SubscriptionSerializer(sub).data
@@ -1422,9 +1422,9 @@ def superadmin_dashboard_stats(request):
 
     try:
         # 1. DO'KONLAR STATISTIKASI
-        total_stores = User.objects.filter(is_superuser=False).count()
+        total_stores = User.objects.filter(is_superuser=False, seller_profile__isnull=True).count()
         active_stores = Subscription.objects.filter(trial_end__gt=now).count()
-        new_stores_30d = User.objects.filter(is_superuser=False, date_joined__gte=last_30_days).count()
+        new_stores_30d = User.objects.filter(is_superuser=False,seller_profile__isnull=True, date_joined__gte=last_30_days).count()
         
         expiring_soon = Subscription.objects.filter(
             trial_end__gt=now, 
@@ -1445,7 +1445,7 @@ def superadmin_dashboard_stats(request):
 
         # 4. DO'KONLAR RO'YXATI
         stores_list = []
-        users_queryset = User.objects.filter(is_superuser=False).order_by('-date_joined')
+        users_queryset = User.objects.filter(is_superuser=False, seller_profile__isnull=True).order_by('-date_joined')
         
         for user in users_queryset:
             sub = Subscription.objects.filter(user=user).first()
@@ -1607,7 +1607,7 @@ def dashboard_stats(request):
         ).aggregate(s=Coalesce(Sum('amount', output_field=DF), 0, output_field=DF))['s']
  
         seyf_chiqim = seyf_qs.filter(
-            type__in=['supplier_pay', 'expense']
+            type__in=['supplier_pay', 'expense', 'return_sale']
         ).aggregate(s=Coalesce(Sum('amount', output_field=DF), 0, output_field=DF))['s']
  
         safe_balance = seyf_kirim - seyf_chiqim
@@ -1658,7 +1658,10 @@ def dashboard_stats(request):
         ).aggregate(
             s=Coalesce(Sum('amount', output_field=DF), 0, output_field=DF)
         )['s']
- 
+
+        daily_supplier_return = SupplierLog.objects.filter(supplier__owner=actual_owner,type='return', created_at__date=filter_date
+        ).aggregate(s=Coalesce(Sum('amount', output_field=DF), 0, output_field=DF))['s']
+
         # Bugun supplierga to'langan pul
         daily_supplier_pay = daily_tx.filter(type='supplier_pay').aggregate(
             s=Coalesce(Sum('amount', output_field=DF), 0, output_field=DF)
@@ -1708,6 +1711,14 @@ def dashboard_stats(request):
             )
         )['total']
  
+        top_products = list(
+            StocLogItem.objects.filter(
+                product__owner=actual_owner, stoc_log__created_at__date=filter_date     # Aynan tanlangan kundagilari
+            )
+            .values('product__id', 'product__name','product__category__name')         # ID va Nomi bo'yicha guruhlaymiz
+            .annotate(total_quantity=Sum('quantity'))       # Sotilgan miqdorini yig'amiz
+            .order_by('-total_quantity')[:5]                # Eng ko'p sotilgan 5 tasini olamiz
+        )
         # ── 8. KUNLIK TRANSAKSIYALAR (paginated) ────────────────────────────
         paginated_tx = Transaction.objects.filter(
             owner=actual_owner,
@@ -1737,6 +1748,7 @@ def dashboard_stats(request):
                 # 4. Supplier (ta'minotchilar)
                 "total_supplier_debt": total_supplier_debt,    # jami qarz
                 "daily_supplier_new_debt": daily_supplier_new_debt,  # bugun nasiya olindi
+                "daily_supplier_return": daily_supplier_return,
                 "daily_supplier_pay": daily_supplier_pay,      # bugun to'landi
  
                 # 5. Qarzdorlar (mijozlar)
@@ -1750,6 +1762,8 @@ def dashboard_stats(request):
  
                 # 7. Ombor qiymati
                 "inventory_value": inventory_value,
+
+                "top_products": top_products,
             },
             "transactions": tx_serializer.data,
             "pagination": {

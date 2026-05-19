@@ -7,6 +7,8 @@ class HasActiveSubscription(permissions.BasePermission):
     message = "Sizda faol obuna mavjud emas. Iltimos, tarifni yangilang."
     def has_permission(self, request, view):
         user = request.user
+        if not user or not user.is_authenticated:
+            return False
         if hasattr(user,'seller_profile'):
             actual_owner = user.seller_profile.owner
         else:

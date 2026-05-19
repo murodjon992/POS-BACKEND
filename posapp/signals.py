@@ -20,7 +20,7 @@ def broadcast_data(action_type, payload):
 # --- SIGNALLAR ---
 
 @receiver(post_save, sender=Subscription)
-def subscription_updated(sender, instance, **kwargs):
+def subscription_updated(sender, instance, created, **kwargs):
     broadcast_data("SUBSCRIPTION_UPDATE", {"user_id": instance.user.id})
     channel_layer = get_channel_layer()
     async_to_sync(channel_layer.group_send)(
@@ -38,6 +38,7 @@ def subscription_updated(sender, instance, **kwargs):
             }
         }
     )
+   
 
 @receiver(post_save, sender=StocLogItem)
 def update_inventory_on_sale(sender, instance, created, **kwargs):
@@ -119,22 +120,22 @@ def handle_return_log(sender, instance, created, **kwargs):
         # Real-time: Vozvrat bo'lganda omborni yangilash
         broadcast_data("STOCK_UPDATE", {"product_id": instance.product.id, "new_quantity": inventory.quantity})
 
-        if instance.payment_method == 'cash':
-            # Sening kodingda 2 ta Transaction bor edi, mantiqan bitta bo'lishi kerak 
-            # lekin sening talabing bo'yicha qoldirdim
-            Transaction.objects.create(
-                owner=instance.product.owner,
-                amount=instance.amount_returned,
-                type='expense',
-                payment_method='cash',
-                note=f"Vozvrat naqd: {instance.product.name}"
-            )
-        elif instance.payment_method == 'debt' and instance.customer:
+        Transaction.objects.create(owner=instance.product.owner,
+                                   amount=instance.amount_returned,
+                                   type='return_sale',
+                                   payment_method=instance.payment_method,
+                                   note=f"vozvrat ({instance.payment_method}): {instance.product.name} - {instance.quantity}ta")
+
+        
+        if instance.payment_method == 'debt' and instance.customer:
             customer = instance.customer
             new_debt = float(customer.total_debt) - float(instance.amount_returned)
             
-            if new_debt <= 0:
-                customer.total_debt = 0 # O'chirishdan ko'ra 0 qilish xavfsizroq
-            else:
-                customer.total_debt = new_debt
+            DebtLog.objects.create(customer=instance.customer,
+                                   amount=instance.amount_returned,
+                                   type="return",
+                                   note=f"vozvrat {instance.product.name} ({instance.quantity}ta)")
+
+            new_debt = float(customer.total_debt) - float(instance.amount_returned)
+            customer.total_debt = max(0, new_debt) # 0 dan tushib ketmasligi uchun
             customer.save()

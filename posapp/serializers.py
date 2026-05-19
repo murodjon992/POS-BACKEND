@@ -177,7 +177,7 @@ class StocLogItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StocLogItem
-        fields = ['id', 'product','stoc_log', 'product_name', 'quantity', 'barcode','price_at_time', 'purchase_price_at_time', 'total_price','returned_qty','remaining_qty','sold_qty']
+        fields = ['id', 'product','stoc_log', 'product_name', 'quantity', 'barcode', 'price_at_time', 'purchase_price_at_time', 'total_price','returned_qty','remaining_qty','sold_qty']
 
     def get_total_price(self, obj):
         return obj.quantity * obj.price_at_time
