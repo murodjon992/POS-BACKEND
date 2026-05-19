@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG") == "True"
 
-ALLOWED_HOSTS = ["127.0.0.1", '*', ' 192.168.100.118' "barakapos.uz", "localhost", "backend"]
+ALLOWED_HOSTS = ["127.0.0.1", '*', '192.168.100.118' "barakapos.uz", "localhost", "backend"]
 
 
 # Application definition
@@ -166,3 +166,6 @@ CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Tashkent'
+
+
+ASGI_APPLICATION = 'pos.asgi.application'
