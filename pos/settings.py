@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG") == "True"
 
-ALLOWED_HOSTS = ["127.0.0.1", '*', '192.168.100.118' "barakapos.uz", "localhost", "backend"]
+ALLOWED_HOSTS = ["127.0.0.1", '*', "192.168.100.118","10.67.243.66", "barakapos.uz", "localhost", "backend"]
 
 
 # Application definition
@@ -70,7 +70,11 @@ CORS_ALLOWED_ORIGINS = [
     "https://barakapos.uz",
     "https://www.barakapos.uz",
     "http://127.0.0.1:5173",
+    "http://localhost:5173",
     "http://192.168.100.118:8000",
+    "http://10.67.243.66:8000",      # <--- Yangi Wi-Fi IP-manzilingiz
+    "http://10.67.243.66:19000",     # <--- Expo Metro Bundler
+    "http://10.67.243.66:8081",      # <--- Expo React Native
 ]
 
 CSRF_TRUSTED_ORIGINS = ["https://barakapos.uz", "https://www.barakapos.uz"]
