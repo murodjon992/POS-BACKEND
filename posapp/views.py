@@ -270,6 +270,8 @@ def get_product_by_barcode(request, barcode):
     except Product.DoesNotExist:
         return Response({"error": "Product not found"})
 
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated,HasActiveSubscription])
 @transaction.atomic
@@ -323,7 +325,19 @@ def sell_product(request):
             )
         next_daily_id = new_daily_id + 1
 
-        return Response({"status": "success", "total": total_sum,"next_daily_id": next_daily_id}, status=201)
+        # MUHIM O'ZGARISH: endi hozirgi savdoning o'z ID'si va sana/mijoz
+        # ma'lumotlari ham qaytariladi - mobile tomon chekka chek raqami,
+        # sana va (nasiya bo'lsa) mijoz ma'lumotini shundan oladi.
+        return Response({
+            "status": "success",
+            "total": total_sum,
+            "id": stoc_log.id,
+            "daily_id": new_daily_id,
+            "next_daily_id": next_daily_id,
+            "created_at": stoc_log.created_at,
+            "customer_name": customer.name if customer else None,
+            "customer_phone": customer.phone if customer else None,
+        }, status=201)
 
     except Exception as e:
         return Response({"error": str(e)}, status=500)
