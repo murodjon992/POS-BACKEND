@@ -3,7 +3,7 @@ from channels.layers import get_channel_layer
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.db.models import F
-from .models import (StocLogItem, Product, AccessoryInventory, StocLog, Transaction, DebtLog, SupplierLog, ReturnLog, Supplier,Subscription)
+from .models import (StocLogItem, Product, AccessoryInventory, StocLog, Transaction, DebtLog, SupplierLog, ReturnLog, Supplier, Subscription)
 
 # --- YORDAMCHI FUNKSIYA (Real-time xabar yuborish) ---
 def broadcast_data(action_type, payload):
@@ -12,7 +12,7 @@ def broadcast_data(action_type, payload):
         "pos_updates",
         {
             "type": "pos_message",
-            "action": action_type, 
+            "action": action_type,
             "payload": payload
         }
     )
@@ -21,24 +21,17 @@ def broadcast_data(action_type, payload):
 
 @receiver(post_save, sender=Subscription)
 def subscription_updated(sender, instance, created, **kwargs):
-    broadcast_data("SUBSCRIPTION_UPDATE", {"user_id": instance.user.id})
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        "pos_updates",
-        {
-            "type": "pos_message",
-            "data": {
-                "action": "SUBSCRIPTION_UPDATE",
-                "payload": {
-                    "user_id": instance.user.id,
-                    "is_active": instance.is_active_status,
-                    "is_paid": instance.is_paid,
-                    "plan_name": instance.plan.name if instance.plan else "Reja tanlanmagan"
-                }
-            }
-        }
-    )
-   
+    # OLDIN: bu yerda ikkinchi, noto'g'ri formatlangan group_send chaqiruvi bor edi
+    # ("data" ichiga o'ralgan action/payload), u consumer tomonidan tushunilmay,
+    # action=null xabar yuborilib, konsolda "Noma'lum action" chiqishiga sabab bo'lgan.
+    # Endi hammasi bitta to'g'ri chaqiruvga birlashtirildi:
+    broadcast_data("SUBSCRIPTION_UPDATE", {
+        "user_id": instance.user.id,
+        "is_active": instance.is_active_status,
+        "is_paid": instance.is_paid,
+        "plan_name": instance.plan.name if instance.plan else "Reja tanlanmagan"
+    })
+
 
 @receiver(post_save, sender=StocLogItem)
 def update_inventory_on_sale(sender, instance, created, **kwargs):
@@ -58,33 +51,31 @@ def auto_transaction_on_total_sale(sender, instance, created, **kwargs):
     if created:
         Transaction.objects.create(
             owner=instance.owner,
-            amount=instance.total_amount, 
-            type='sale', 
+            amount=instance.total_amount,
+            type='sale',
             payment_method=instance.payment_method
         )
         if instance.payment_method == 'debt' and instance.customer:
             customer = instance.customer
             customer.total_debt += instance.total_amount
-            customer.save() 
+            customer.save()
             DebtLog.objects.create(
                 customer=customer,
                 amount=instance.total_amount,
                 type='borrow',
                 note=f"Savdo #{instance.daily_id} dan qarz"
             )
-        # Real-time: Kassa yoki Dashboardda savdo summasini yangilash
         broadcast_data("NEW_SALE", {"amount": float(instance.total_amount)})
 
 @receiver(post_save, sender=DebtLog)
 def auto_transaction_on_debt_pay(sender, instance, created, **kwargs):
     if created and instance.type == 'pay':
         Transaction.objects.create(
-            owner=instance.customer.owner, 
+            owner=instance.customer.owner,
             amount=instance.amount,
             type='customer_pay',
             payment_method='cash'
         )
-        # Real-time: Qarz to'langanini ko'rsatish
         broadcast_data("DEBT_PAY", {"customer": instance.customer.name, "amount": float(instance.amount)})
 
 @receiver(post_save, sender=SupplierLog)
@@ -93,9 +84,9 @@ def update_supplier_balance(sender, instance, created, **kwargs):
         supplier = instance.supplier
         if instance.type == 'take':
             supplier.total_debt_to_them = F('total_debt_to_them') + instance.amount
-        elif instance.type == 'pay' or instance.type == 'return': 
+        elif instance.type == 'pay' or instance.type == 'return':
             supplier.total_debt_to_them = F('total_debt_to_them') - instance.amount
-        
+
         supplier.save()
         supplier.refresh_from_db()
 
@@ -107,7 +98,7 @@ def update_supplier_balance(sender, instance, created, **kwargs):
                 type='supplier_pay',
                 payment_method='cash',
                 content_type=ContentType.objects.get_for_model(Supplier),
-                object_id=supplier.id # Bu yerda object_id qo'shish kerak odatda
+                object_id=supplier.id
             )
 
 @receiver(post_save, sender=ReturnLog)
@@ -117,7 +108,6 @@ def handle_return_log(sender, instance, created, **kwargs):
         inventory.quantity += instance.quantity
         inventory.save()
 
-        # Real-time: Vozvrat bo'lganda omborni yangilash
         broadcast_data("STOCK_UPDATE", {"product_id": instance.product.id, "new_quantity": inventory.quantity})
 
         Transaction.objects.create(owner=instance.product.owner,
@@ -126,16 +116,15 @@ def handle_return_log(sender, instance, created, **kwargs):
                                    payment_method=instance.payment_method,
                                    note=f"vozvrat ({instance.payment_method}): {instance.product.name} - {instance.quantity}ta")
 
-        
         if instance.payment_method == 'debt' and instance.customer:
             customer = instance.customer
             new_debt = float(customer.total_debt) - float(instance.amount_returned)
-            
+
             DebtLog.objects.create(customer=instance.customer,
                                    amount=instance.amount_returned,
                                    type="return",
                                    note=f"vozvrat {instance.product.name} ({instance.quantity}ta)")
 
             new_debt = float(customer.total_debt) - float(instance.amount_returned)
-            customer.total_debt = max(0, new_debt) # 0 dan tushib ketmasligi uchun
+            customer.total_debt = max(0, new_debt)
             customer.save()
