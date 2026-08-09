@@ -1,17 +1,19 @@
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
-# 1. Ishchi katalogni yaratish
 WORKDIR /app
 
-# 2. Avval FAQAT requirements faylini ko'chiramiz
+# Avval FAQAT requirements faylini ko'chiramiz
 COPY requirements.txt .
 
-# 3. Kutubxonalarni o'rnatamiz (Bu qatlam keshda qoladi)
-# Agar requirements.txt o'zgarmasa, Docker bu bosqichni sakrab o'tadi
-RUN pip install --no-cache-dir -r requirements.txt
+# --mount=type=cache: pip'ning o'z ichki yuklab olish keshini Docker qatlamidan
+# ALOHIDA saqlaydi. Hatto Docker qatlam keshi negadir buzilib qolsa ham
+# (masalan boshqa sabablarga ko'ra), pip paketlarni qaytadan internetdan emas,
+# shu mahalliy keshdan oladi - build sezilarli tezlashadi.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
-# 4. KEYIN qolgan hamma kodni ko'chiramiz
-# Endi views.py o'zgarsa, faqat mana shu qatlam ishlaydi
+# KEYIN qolgan hamma kodni ko'chiramiz
 COPY . .
 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
