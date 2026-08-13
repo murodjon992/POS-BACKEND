@@ -940,7 +940,18 @@ def update_user(request, pk):
     user = User.objects.get(pk=pk)
     serializer = UserSerializer(user, data=request.data, partial=True)
     if serializer.is_valid():
+        # Block/unblock bo'layotganini saqlashdan OLDIN aniqlaymiz
+        is_active_changing = 'is_active' in request.data
+ 
         serializer.save()
+ 
+        # Agar is_active o'zgargan bo'lsa (block/unblock), real-time xabar yuboramiz
+        if is_active_changing:
+            broadcast_data("USER_STATUS_UPDATE", {
+                "user_id": user.id,
+                "is_active": user.is_active,
+            })
+ 
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
 
