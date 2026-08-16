@@ -235,3 +235,14 @@ class Seller(models.Model):
                 return "active", "owner", "/dashboard"
             else:
                 return "expired", "owner", "/subscription-plan"
+
+# models.py oxiriga shuni qo'shing (import qatorlariga tegmang, faqat pastga qo'shing):
+
+class PushToken(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_tokens')
+    token = models.CharField(max_length=255, unique=True)
+    platform = models.CharField(max_length=20, blank=True, default='android')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.token[:25]}..."

@@ -8,7 +8,8 @@ from django.db.models.functions import Coalesce
 from rest_framework.pagination import PageNumberPagination
 from .permissions import HasActiveSubscription
 from django.db import transaction
-from .models import Product, AccessoryInventory, StocLog, Customer,DebtLog,Subscription,Plan,Category,ReturnLog,Supplier,Transaction,Seller,StocLogItem,SupplierLog,PurchaseLog
+from .push_utils import send_push_notification
+from .models import Product, AccessoryInventory, StocLog, Customer,DebtLog,Subscription,Plan,Category,ReturnLog,Supplier,Transaction,Seller,StocLogItem,SupplierLog,PurchaseLog,PushToken
 from .serializers import ProductSerializer, InventorySerializer,CustomerSerializer,TransactionSerializer,UserSerializer,CategorySerializer,DebtLogSerializer,SubscriptionSerializer,PlanSerializer,SupplierSerializer,ReturnLogSerializer,SellerCreateSerializer,StocLogSerializer,PurchaseItemSerializer
 from django.db.models import Q
 from rest_framework.response import Response
@@ -935,22 +936,27 @@ def get_all_users(request):
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
 
+
 @api_view(['PUT'])
 def update_user(request, pk):
     user = User.objects.get(pk=pk)
     serializer = UserSerializer(user, data=request.data, partial=True)
     if serializer.is_valid():
-        # Block/unblock bo'layotganini saqlashdan OLDIN aniqlaymiz
         is_active_changing = 'is_active' in request.data
- 
         serializer.save()
  
-        # Agar is_active o'zgargan bo'lsa (block/unblock), real-time xabar yuboramiz
         if is_active_changing:
             broadcast_data("USER_STATUS_UPDATE", {
                 "user_id": user.id,
                 "is_active": user.is_active,
             })
+            # YANGI: push notification ham yuboramiz
+            if not user.is_active:
+                send_push_notification(
+                    user,
+                    "Hisobingiz bloklandi",
+                    "Administrator hisobingizni vaqtincha to'xtatdi."
+                )
  
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
@@ -1380,16 +1386,28 @@ def get_all_subscriptions(request):
     serializer = SubscriptionSerializer(subs, many=True)
     return Response(serializer.data)
 
+
 @api_view(['PATCH'])
 @permission_classes([IsAdminUser])
 def update_subscription_admin(request, pk):
     sub = get_object_or_404(Subscription, pk=pk)
-    
-    # partial=True bo'lishi shart, chunki React'dan hamma field kelmaydi
+ 
+    was_paid = sub.is_paid  # o'zgarishdan OLDINGI holatni saqlab qolamiz
+ 
     serializer = SubscriptionSerializer(sub, data=request.data, partial=True)
-    
+ 
     if serializer.is_valid():
-        serializer.save() 
+        serializer.save()
+        sub.refresh_from_db()
+ 
+        # YANGI: agar to'lov yangi tasdiqlangan bo'lsa (avval False, endi True), push yuboramiz
+        if not was_paid and sub.is_paid:
+            send_push_notification(
+                sub.user,
+                "Obuna faollashtirildi",
+                f"{sub.plan.name if sub.plan else 'Tarifingiz'} muvaffaqiyatli faollashtirildi!"
+            )
+ 
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
 
@@ -1927,3 +1945,19 @@ def customer_history(request, customer_id):
         "debt_history": debt_serializer.data,
         "return_history": return_serializer.data
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def register_push_token(request):
+    token = request.data.get('token')
+    platform = request.data.get('platform', 'android')
+ 
+    if not token:
+        return Response({"error": "Token yuborilmadi"}, status=400)
+ 
+    PushToken.objects.update_or_create(
+        token=token,
+        defaults={'user': request.user, 'platform': platform}
+    )
+    return Response({"status": "saved"})
