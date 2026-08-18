@@ -1,7 +1,10 @@
-# posapp/push_utils.py - YANGI FAYL, shu nom bilan yarating (models.py bilan bir papkada)
+# posapp/push_utils.py
 
+import logging
 import requests
 from .models import PushToken
+
+logger = logging.getLogger(__name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
@@ -9,11 +12,15 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 def send_push_notification(user, title, body, data=None):
     """
     Berilgan userning barcha ro'yxatdan o'tgan qurilmalariga push notification yuboradi.
-    Xato bo'lsa jim (silent) qoladi - push kelmasligi asosiy funksionallikni buzmasligi kerak.
     """
+    logger.warning(f"[PUSH] send_push_notification chaqirildi: user={user.username}")
+
     tokens = list(PushToken.objects.filter(user=user).values_list('token', flat=True))
     if not tokens:
+        logger.warning(f"[PUSH] {user.username} uchun hech qanday token topilmadi - yuborilmadi.")
         return
+
+    logger.warning(f"[PUSH] {len(tokens)} ta tokenga yuborilyapti: {tokens}")
 
     messages = [
         {
@@ -37,12 +44,12 @@ def send_push_notification(user, title, body, data=None):
             timeout=10,
         )
         result = response.json()
+        logger.warning(f"[PUSH] Expo javobi: {result}")
 
-        # Agar qurilma ilovani o'chirib tashlagan/tokendan voz kechgan bo'lsa,
-        # Expo shuni bildiradi - o'sha tokenni bazadan o'chirib tashlaymiz
         for item, token in zip(result.get("data", []), tokens):
             if item.get("status") == "error" and item.get("details", {}).get("error") == "DeviceNotRegistered":
                 PushToken.objects.filter(token=token).delete()
+                logger.warning(f"[PUSH] Yaroqsiz token o'chirildi: {token}")
 
     except Exception as e:
-        print(f"Push notification yuborishda xato: {e}")
+        logger.error(f"[PUSH] Push notification yuborishda xato: {e}")

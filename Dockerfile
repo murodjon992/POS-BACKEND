@@ -13,7 +13,12 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
+
+
+ENV PYTHONUNBUFFERED=1
+
 # KEYIN qolgan hamma kodni ko'chiramiz
 COPY . .
 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
