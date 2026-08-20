@@ -1387,27 +1387,37 @@ def get_all_subscriptions(request):
     return Response(serializer.data)
 
 
+# views.py dagi update_subscription_admin funksiyasini shu bilan almashtiring:
+
 @api_view(['PATCH'])
 @permission_classes([IsAdminUser])
 def update_subscription_admin(request, pk):
     sub = get_object_or_404(Subscription, pk=pk)
- 
-    was_paid = sub.is_paid  # o'zgarishdan OLDINGI holatni saqlab qolamiz
- 
+
+    was_paid = sub.is_paid
+    old_trial_end = sub.trial_end  # muddat uzaytirilganini aniqlash uchun
+
     serializer = SubscriptionSerializer(sub, data=request.data, partial=True)
- 
+
     if serializer.is_valid():
         serializer.save()
         sub.refresh_from_db()
- 
-        # YANGI: agar to'lov yangi tasdiqlangan bo'lsa (avval False, endi True), push yuboramiz
+
+        # Holat 1: yangi tasdiqlash (False -> True)
         if not was_paid and sub.is_paid:
             send_push_notification(
                 sub.user,
                 "Obuna faollashtirildi",
                 f"{sub.plan.name if sub.plan else 'Tarifingiz'} muvaffaqiyatli faollashtirildi!"
             )
- 
+        # Holat 2: allaqachon to'langan, lekin muddati uzaytirildi
+        elif was_paid and sub.is_paid and sub.trial_end and sub.trial_end != old_trial_end:
+            send_push_notification(
+                sub.user,
+                "Obuna muddati uzaytirildi",
+                f"Obunangiz {sub.trial_end.strftime('%d.%m.%Y')} sanagacha uzaytirildi."
+            )
+
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
 
