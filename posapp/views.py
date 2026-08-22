@@ -950,8 +950,14 @@ def update_user(request, pk):
                 "user_id": user.id,
                 "is_active": user.is_active,
             })
-            # YANGI: push notification ham yuboramiz
-            if not user.is_active:
+ 
+            if user.is_active:
+                send_push_notification(
+                    user,
+                    "Hisobingiz qayta faollashtirildi",
+                    "Administrator hisobingizni qayta ochdi. Xush kelibsiz!"
+                )
+            else:
                 send_push_notification(
                     user,
                     "Hisobingiz bloklandi",
@@ -1393,31 +1399,34 @@ def get_all_subscriptions(request):
 @permission_classes([IsAdminUser])
 def update_subscription_admin(request, pk):
     sub = get_object_or_404(Subscription, pk=pk)
-
+ 
     was_paid = sub.is_paid
-    old_trial_end = sub.trial_end  # muddat uzaytirilganini aniqlash uchun
-
+    old_trial_end = sub.trial_end
+ 
     serializer = SubscriptionSerializer(sub, data=request.data, partial=True)
-
+ 
     if serializer.is_valid():
         serializer.save()
         sub.refresh_from_db()
-
-        # Holat 1: yangi tasdiqlash (False -> True)
+ 
         if not was_paid and sub.is_paid:
             send_push_notification(
                 sub.user,
                 "Obuna faollashtirildi",
                 f"{sub.plan.name if sub.plan else 'Tarifingiz'} muvaffaqiyatli faollashtirildi!"
             )
-        # Holat 2: allaqachon to'langan, lekin muddati uzaytirildi
-        elif was_paid and sub.is_paid and sub.trial_end and sub.trial_end != old_trial_end:
+        # MUHIM TUZATISH: faqat yangi sana ESKISIDAN KEYINGI bo'lsa
+        # ("uzaytirish"), aks holda (orqaga surilsa/qisqarsa) push yubormaymiz
+        elif (
+            was_paid and sub.is_paid and sub.trial_end
+            and old_trial_end and sub.trial_end > old_trial_end
+        ):
             send_push_notification(
                 sub.user,
                 "Obuna muddati uzaytirildi",
                 f"Obunangiz {sub.trial_end.strftime('%d.%m.%Y')} sanagacha uzaytirildi."
             )
-
+ 
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
 
