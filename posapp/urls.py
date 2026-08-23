@@ -37,7 +37,7 @@ urlpatterns = [
     path("analytics/",get_business_analytics),
     path('push-token/', register_push_token),
     path('app-version/', app_version_check),
-    path('admin/app-version/', admin_app_version),
+    path('admin-app-version/', admin_app_version),
     path("sale/", sell_product), #Sotuv API
     path("my-sellers/", get_my_sellers), #Sotuv API
     path("sales-history/", sales_history), #Sotuvlar tarixi
