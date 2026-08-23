@@ -246,3 +246,24 @@ class PushToken(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.token[:25]}..."
+
+
+class AppVersion(models.Model):
+    platform = models.CharField(max_length=20, default='android', unique=True)
+    minimum_version = models.CharField(
+        max_length=20,
+        help_text="Bu versiyadan PASTKI versiyalar majburiy yangilashga yo'naltiriladi. Masalan: 1.2.0"
+    )
+    latest_version = models.CharField(max_length=20, help_text="Play Store'dagi eng oxirgi versiya raqami")
+    update_message = models.TextField(
+        blank=True,
+        default="Ilovaning yangi versiyasi chiqdi! Davom etish uchun yangilang."
+    )
+    store_url = models.URLField(
+        blank=True,
+        default="https://play.google.com/store/apps/details?id=com.murod999.posmobile"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    def __str__(self):
+        return f"{self.platform} - min:{self.minimum_version} / latest:{self.latest_version}"

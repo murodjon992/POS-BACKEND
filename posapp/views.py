@@ -9,8 +9,8 @@ from rest_framework.pagination import PageNumberPagination
 from .permissions import HasActiveSubscription
 from django.db import transaction
 from .push_utils import send_push_notification
-from .models import Product, AccessoryInventory, StocLog, Customer,DebtLog,Subscription,Plan,Category,ReturnLog,Supplier,Transaction,Seller,StocLogItem,SupplierLog,PurchaseLog,PushToken
-from .serializers import ProductSerializer, InventorySerializer,CustomerSerializer,TransactionSerializer,UserSerializer,CategorySerializer,DebtLogSerializer,SubscriptionSerializer,PlanSerializer,SupplierSerializer,ReturnLogSerializer,SellerCreateSerializer,StocLogSerializer,PurchaseItemSerializer
+from .models import Product, AccessoryInventory, StocLog, Customer,DebtLog,Subscription,Plan,Category,ReturnLog,Supplier,Transaction,Seller,StocLogItem,SupplierLog,PurchaseLog,PushToken,AppVersion
+from .serializers import ProductSerializer, InventorySerializer,CustomerSerializer,TransactionSerializer,UserSerializer,CategorySerializer,DebtLogSerializer,SubscriptionSerializer,PlanSerializer,SupplierSerializer,ReturnLogSerializer,SellerCreateSerializer,StocLogSerializer,PurchaseItemSerializer,AppVersionSerializer
 from django.db.models import Q
 from rest_framework.response import Response
 from PIL import Image as PILImage
@@ -1980,3 +1980,44 @@ def register_push_token(request):
         defaults={'user': request.user, 'platform': platform}
     )
     return Response({"status": "saved"})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def app_version_check(request):
+    platform = request.GET.get('platform', 'android')
+    try:
+        av = AppVersion.objects.get(platform=platform)
+        return Response({
+            "minimum_version": av.minimum_version,
+            "latest_version": av.latest_version,
+            "update_message": av.update_message,
+            "store_url": av.store_url,
+        })
+    except AppVersion.DoesNotExist:
+        # Yozuv hali qo'shilmagan bo'lsa - hech kimni majburlamaymiz
+        return Response({
+            "minimum_version": "0.0.0",
+            "latest_version": "0.0.0",
+            "update_message": "",
+            "store_url": "",
+        })
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAdminUser])
+def admin_app_version(request):
+    # Hozircha faqat 'android' - kelajakda iOS qo'shilsa, platform query param bilan kengaytirsa bo'ladi
+    app_version, _ = AppVersion.objects.get_or_create(
+        platform='android',
+        defaults={'minimum_version': '1.0.0', 'latest_version': '1.0.0'}
+    )
+ 
+    if request.method == 'GET':
+        return Response(AppVersionSerializer(app_version).data)
+ 
+    serializer = AppVersionSerializer(app_version, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=400)

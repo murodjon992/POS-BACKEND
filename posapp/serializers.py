@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.db import transaction
-from .models import Product, AccessoryInventory, Category,Customer,DebtLog,StocLog,User,Subscription,Plan,ReturnLog,Supplier,SupplierLog,Transaction,Seller,StocLogItem,PurchaseLog
+from .models import Product, AccessoryInventory, Category,Customer,DebtLog,StocLog,User,Subscription,Plan,ReturnLog,Supplier,SupplierLog,Transaction,Seller,StocLogItem,PurchaseLog,AppVersion
 from rest_framework.validators import UniqueValidator
 from django.db.models import Sum
 
@@ -305,3 +305,10 @@ class TransactionSerializer(serializers.ModelSerializer):
         model = Transaction
         fields = ['id', 'amount', 'type', 'type_display', 'payment_method', 'created_at']
         read_only_fields = ['owner', 'created_at']
+
+
+class AppVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppVersion
+        fields = ['id', 'platform', 'minimum_version', 'latest_version', 'update_message', 'store_url', 'updated_at']
+        read_only_fields = ['id', 'updated_at']

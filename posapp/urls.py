@@ -1,6 +1,6 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
-from .views import get_product_by_barcode, sell_product, stock_in, product_search, inventory_view, get_debtors, pay_debtor_debt, generate_product_barcodes_pdf, register, login,select_plan, super_admin_excel_upload, get_all_users,delete_user,update_user,product_detail,product_list_create,category_list,category_detail,get_all_subscriptions,update_subscription_admin,my_subscription,PlanViewSet,SellerViewSet,superadmin_dashboard_stats,dashboard_stats,return_product,get_business_analytics,update_profile,reset_password,request_password_reset,customer_debt_history,sales_history,suppliers_view,supplier_history,pay_supplier_debt,return_to_supplier,all_purchase_history,supplier_general_return,add_expense,customers_view,get_debtor_details,extend_subscription,get_my_sellers,owner_excel_upload,register_push_token
+from .views import get_product_by_barcode, sell_product, stock_in, product_search, inventory_view, get_debtors, pay_debtor_debt, generate_product_barcodes_pdf, register, login,select_plan, super_admin_excel_upload, get_all_users,delete_user,update_user,product_detail,product_list_create,category_list,category_detail,get_all_subscriptions,update_subscription_admin,my_subscription,PlanViewSet,SellerViewSet,superadmin_dashboard_stats,dashboard_stats,return_product,get_business_analytics,update_profile,reset_password,request_password_reset,customer_debt_history,sales_history,suppliers_view,supplier_history,pay_supplier_debt,return_to_supplier,all_purchase_history,supplier_general_return,add_expense,customers_view,get_debtor_details,extend_subscription,get_my_sellers,owner_excel_upload,register_push_token,app_version_check,admin_app_version
 router = DefaultRouter()
 from django.views.decorators.csrf import csrf_exempt
 router.register(r'plans', PlanViewSet, basename='plan')
@@ -36,6 +36,8 @@ urlpatterns = [
     # TOVARCHILAR TUGASHI======================================
     path("analytics/",get_business_analytics),
     path('push-token/', register_push_token),
+    path('app-version/', app_version_check),
+    path('admin/app-version/', admin_app_version),
     path("sale/", sell_product), #Sotuv API
     path("my-sellers/", get_my_sellers), #Sotuv API
     path("sales-history/", sales_history), #Sotuvlar tarixi

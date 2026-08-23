@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Product, AccessoryInventory, StocLog,Customer,DebtLog,Subscription,Plan,ReturnLog,PushToken
+from .models import Category, Product, AccessoryInventory, StocLog,Customer,DebtLog,Subscription,Plan,ReturnLog,PushToken,AppVersion
 
 
 admin.site.register(Category)
@@ -16,3 +16,8 @@ class SubscriptionAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'phone')
 admin.site.register(Plan)
 admin.site.register(ReturnLog)
+
+
+@admin.register(AppVersion)
+class AppVersionAdmin(admin.ModelAdmin):
+    list_display = ['platform', 'minimum_version', 'latest_version', 'updated_at']
